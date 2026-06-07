@@ -14,49 +14,64 @@ from starlette.routing import Mount, Route
 
 from mcp_web_scraper.config import Settings, get_settings
 from mcp_web_scraper.scraper import ScrapeError, extract_from_html, scrape_url
-
-settings = get_settings()
-
-mcp = FastMCP(
-    "mcp-web-scraper",
-    stateless_http=True,
-    json_response=True,
-)
+from mcp_web_scraper.transport import build_transport_security
 
 
-@mcp.tool()
-async def scrape_url_tool(
-    url: str,
-    css_selectors: dict[str, str] | None = None,
-    include_links: bool = False,
-    max_chars: int = 50000,
-) -> dict[str, Any]:
-    """Fetch a URL and extract page title, text, optional CSS matches, and links."""
-    try:
-        return await scrape_url(
-            url,
-            settings,
-            css_selectors=css_selectors,
-            include_links=include_links,
-            max_chars=max_chars,
-        )
-    except ScrapeError as exc:
-        return {"error": str(exc), "url": url}
-    except Exception as exc:
-        return {"error": f"Unexpected scrape failure: {exc}", "url": url}
+def create_mcp_server(cfg: Settings) -> FastMCP:
+    server = FastMCP(
+        "mcp-web-scraper",
+        stateless_http=True,
+        json_response=True,
+        transport_security=build_transport_security(cfg),
+    )
 
+    @server.tool(
+        name="scrape_url",
+        description=(
+            "Fetch a web page over HTTP/HTTPS and return its title, plain text, "
+            "optional CSS selector matches, and links. Static HTML only."
+        ),
+    )
+    async def scrape_url_tool(
+        url: str,
+        css_selectors: dict[str, str] | None = None,
+        include_links: bool = False,
+        max_chars: int = 50000,
+    ) -> dict[str, Any]:
+        try:
+            return await scrape_url(
+                url,
+                cfg,
+                css_selectors=css_selectors,
+                include_links=include_links,
+                max_chars=max_chars,
+            )
+        except ScrapeError as exc:
+            return {"error": str(exc), "url": url}
+        except Exception as exc:
+            return {"error": f"Unexpected scrape failure: {exc}", "url": url}
 
-@mcp.tool()
-def extract_from_html_tool(html: str, css_selector: str) -> dict[str, Any]:
-    """Extract text from HTML using a CSS selector."""
-    try:
-        values = extract_from_html(html, css_selector)
-        return {"css_selector": css_selector, "values": values, "count": len(values)}
-    except Exception as exc:
-        return {"error": str(exc), "css_selector": css_selector}
+    @server.tool(
+        name="extract_from_html",
+        description="Extract visible text from an HTML string using a CSS selector.",
+    )
+    def extract_from_html_tool(html: str, css_selector: str) -> dict[str, Any]:
+        try:
+            values = extract_from_html(html, css_selector)
+            return {"css_selector": css_selector, "values": values, "count": len(values)}
+        except Exception as exc:
+            return {"error": str(exc), "css_selector": css_selector}
+
+    return server
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
+    """Optional API key guard for /mcp.
+
+    Returns 403 (not 401) on failure so Odysseus does not misinterpret a missing
+    static API key as an OAuth challenge and enter the browser auth flow.
+    """
+
     def __init__(self, app: Any, api_key: str) -> None:
         super().__init__(app)
         self.api_key = api_key
@@ -68,7 +83,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         auth = request.headers.get("authorization", "")
         expected = f"Bearer {self.api_key}"
         if auth != expected:
-            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
         return await call_next(request)
 
 
@@ -77,7 +92,8 @@ async def health(_: Request) -> JSONResponse:
 
 
 def create_app(cfg: Settings | None = None) -> Starlette:
-    cfg = cfg or settings
+    cfg = cfg or get_settings()
+    mcp = create_mcp_server(cfg)
     middleware: list[Middleware] = []
     if cfg.mcp_api_key:
         middleware.append(Middleware(BearerAuthMiddleware, api_key=cfg.mcp_api_key))
@@ -87,6 +103,8 @@ def create_app(cfg: Settings | None = None) -> Starlette:
         async with mcp.session_manager.run():
             yield
 
+    # Odysseus expects the Streamable HTTP endpoint at the configured URL,
+    # e.g. http://mcp-web-scraper:8000/mcp (transport "http" in Settings → MCP).
     mcp.settings.streamable_http_path = "/"
 
     return Starlette(
@@ -100,7 +118,8 @@ def create_app(cfg: Settings | None = None) -> Starlette:
 
 
 def main() -> None:
-    app = create_app()
+    settings = get_settings()
+    app = create_app(settings)
     uvicorn.run(
         app,
         host=settings.mcp_host,

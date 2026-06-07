@@ -54,7 +54,20 @@ docker compose up --build -d
 
 ## Connect to Odysseus
 
-Odysseus uses native Streamable HTTP MCP (transport `http`). No MCPO bridge required.
+Odysseus uses native Streamable HTTP MCP (transport `http`) via the Python SDK's `streamablehttp_client`. No MCPO bridge required.
+
+### Odysseus requirements this server meets
+
+| Requirement | How this server satisfies it |
+|-------------|------------------------------|
+| Transport `http` | Streamable HTTP at `/mcp` with `stateless_http=True` and `json_response=True` |
+| MCP URL | Use `http://<host>:8000/mcp` exactly (Odysseus `McpManager._connect_http`) |
+| No OAuth | Server does not return `401`; Odysseus only starts OAuth on `401` responses |
+| Tool discovery | `initialize` + `list_tools` expose `scrape_url` and `extract_from_html` with JSON Schema |
+| Tool calls | Agent invokes `mcp__{server_id}__scrape_url` via `session.call_tool` |
+| Fast connect | Startup completes within Odysseus's 8s HTTP connect window |
+
+**Important:** Leave `MCP_API_KEY` empty when using Odysseus. Odysseus does not send a Bearer token for HTTP MCP servers, and a `401` response would trigger its OAuth flow.
 
 1. Run this MCP server (publish port `8000` or attach to the same Docker network as Odysseus).
 2. In Odysseus **Settings → MCP** (admin), add a server:
@@ -65,7 +78,7 @@ Odysseus uses native Streamable HTTP MCP (transport `http`). No MCPO bridge requ
 | Transport | `http` |
 | URL | `http://mcp-web-scraper:8000/mcp` (shared compose network) or `http://host.docker.internal:8000/mcp` (MCP on host) |
 
-3. Configure your LLM (e.g. Ollama) in Odysseus separately — the agent uses scraping tools from this server and its own model for analysis.
+3. Configure your LLM in Odysseus separately — the agent uses scraping tools from this server and its own model for analysis.
 
 ### Compose overlay with Odysseus
 
@@ -106,14 +119,14 @@ Copy `.env.example` to `.env`:
 | `MCP_PORT` | `8000` | HTTP port |
 | `SCRAPE_TIMEOUT_S` | `30` | HTTP fetch timeout (seconds) |
 | `SCRAPE_MAX_BYTES` | `2097152` | Max download size (2 MB) |
-| `MCP_API_KEY` | _(empty)_ | Optional Bearer token for `/mcp` |
-| `ALLOWED_ORIGINS` | `*` | Origin allowlist for Streamable HTTP |
+| `MCP_API_KEY` | _(empty)_ | Optional Bearer token for `/mcp` (incompatible with Odysseus) |
+| `ALLOWED_ORIGINS` | `*` | Origin allowlist; `*` disables DNS rebinding checks (recommended for Odysseus/Docker) |
 | `USER_AGENT` | `mcp-web-scraper/0.1.0` | HTTP User-Agent header |
 
 ## Security
 
 - Do not expose this server unauthenticated on the public internet.
-- Set `MCP_API_KEY` and pass `Authorization: Bearer <key>` from your MCP client.
+- Set `MCP_API_KEY` for Open WebUI or other clients that support Bearer auth. Do not enable it for Odysseus.
 - Scraping is unrestricted by default; only scrape sites you are permitted to access.
 
 ## Creating a release
