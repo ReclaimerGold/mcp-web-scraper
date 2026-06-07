@@ -1,30 +1,23 @@
 # MCP Web Scraper
 
-A minimal [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that scrapes static HTML with BeautifulSoup and analyzes content via an external [Ollama](https://ollama.com) DeepSeek model.
+A standalone [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that scrapes static HTML with BeautifulSoup. LLM analysis is handled by your MCP client (e.g. [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus) with Ollama, or [Open WebUI](https://docs.openwebui.com/features/extensibility/mcp/)) — this server only provides scraping tools.
 
-Designed for container deployment and integration with [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus) and [Open WebUI](https://docs.openwebui.com/features/extensibility/mcp/) over **Streamable HTTP**.
+Designed for container deployment over **Streamable HTTP**.
 
 ## What it does
 
-Exposes three MCP tools:
+Exposes two MCP tools:
 
 | Tool | Description |
 |------|-------------|
 | `scrape_url` | Fetch a URL and return title, text, optional CSS matches, and links |
 | `extract_from_html` | Parse existing HTML with a CSS selector |
-| `analyze_content` | Send text to Ollama/DeepSeek with a custom analysis prompt |
 
 **Limitations:** static HTML only (no JavaScript rendering), no anti-bot bypass. Respect site terms and rate limits.
 
 ## Prerequisites
 
 - Docker
-- Ollama running on the host with a DeepSeek model pulled, e.g. `ollama pull deepseek-r1:7b`
-- Host Ollama listening on the network (required when MCP runs in Docker):
-
-```bash
-OLLAMA_HOST=0.0.0.0:11434 ollama serve
-```
 
 ## Quick start (GHCR image)
 
@@ -36,9 +29,6 @@ docker pull ghcr.io/<owner>/mcp-web-scraper:latest
 docker run -d \
   --name mcp-web-scraper \
   -p 127.0.0.1:8000:8000 \
-  --add-host=host.docker.internal:host-gateway \
-  -e OLLAMA_HOST=http://host.docker.internal:11434 \
-  -e OLLAMA_MODEL=deepseek-r1:7b \
   ghcr.io/<owner>/mcp-web-scraper:latest
 ```
 
@@ -75,11 +65,11 @@ Odysseus uses native Streamable HTTP MCP (transport `http`). No MCPO bridge requ
 | Transport | `http` |
 | URL | `http://mcp-web-scraper:8000/mcp` (shared compose network) or `http://host.docker.internal:8000/mcp` (MCP on host) |
 
-3. Configure Ollama in Odysseus separately: `http://host.docker.internal:11434/v1`
+3. Configure your LLM (e.g. Ollama) in Odysseus separately — the agent uses scraping tools from this server and its own model for analysis.
 
 ### Compose overlay with Odysseus
 
-Add to your Odysseus `docker-compose.yml` or a override file:
+Add to your Odysseus `docker-compose.yml` or an override file:
 
 ```yaml
 services:
@@ -87,11 +77,6 @@ services:
     image: ghcr.io/<owner>/mcp-web-scraper:latest
     ports:
       - "127.0.0.1:8000:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - OLLAMA_MODEL=deepseek-r1:7b
     restart: unless-stopped
 
   odysseus:
@@ -119,8 +104,6 @@ Copy `.env.example` to `.env`:
 |----------|---------|-------------|
 | `MCP_HOST` | `0.0.0.0` | Bind address |
 | `MCP_PORT` | `8000` | HTTP port |
-| `OLLAMA_HOST` | `http://host.docker.internal:11434` | Ollama API base URL |
-| `OLLAMA_MODEL` | `deepseek-r1:7b` | Default analysis model |
 | `SCRAPE_TIMEOUT_S` | `30` | HTTP fetch timeout (seconds) |
 | `SCRAPE_MAX_BYTES` | `2097152` | Max download size (2 MB) |
 | `MCP_API_KEY` | _(empty)_ | Optional Bearer token for `/mcp` |

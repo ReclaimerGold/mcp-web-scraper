@@ -12,7 +12,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
-from mcp_web_scraper.analyzer import AnalysisError, analyze_content
 from mcp_web_scraper.config import Settings, get_settings
 from mcp_web_scraper.scraper import ScrapeError, extract_from_html, scrape_url
 
@@ -55,26 +54,6 @@ def extract_from_html_tool(html: str, css_selector: str) -> dict[str, Any]:
         return {"css_selector": css_selector, "values": values, "count": len(values)}
     except Exception as exc:
         return {"error": str(exc), "css_selector": css_selector}
-
-
-@mcp.tool()
-def analyze_content_tool(
-    content: str,
-    prompt: str,
-    model: str | None = None,
-    include_raw: bool = False,
-) -> dict[str, Any]:
-    """Analyze text content with an Ollama-hosted DeepSeek model."""
-    try:
-        return analyze_content(
-            content,
-            prompt,
-            settings,
-            model=model,
-            include_raw=include_raw,
-        )
-    except AnalysisError as exc:
-        return {"error": str(exc), "model": model or settings.ollama_model}
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):

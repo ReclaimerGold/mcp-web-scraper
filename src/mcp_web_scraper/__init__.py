@@ -1,3 +1,3 @@
-"""MCP Web Scraper — scrape static HTML and analyze with Ollama."""
+"""MCP Web Scraper — standalone static HTML scraping via MCP."""
 
 __version__ = "0.1.0"
