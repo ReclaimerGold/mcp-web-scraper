@@ -1,0 +1,23 @@
+# Join the Odysseus Docker network so Odysseus can reach this service by name.
+#
+# Usage (from this repo):
+#   docker compose -f docker-compose.yml -f docker-compose.odysseus.yml up -d
+#
+# Then register in Odysseus Settings → MCP:
+#   Transport: Streamable HTTP (http)
+#   URL: http://mcp-web-scraper:8000/mcp
+#
+# Set ODYSSEUS_NETWORK if your Odysseus compose project uses a different network
+# name (check with: docker network ls | rg odysseus)
+
+services:
+  mcp-web-scraper:
+    container_name: mcp-web-scraper
+    networks:
+      - default
+      - odysseus
+
+networks:
+  odysseus:
+    external: true
+    name: ${ODYSSEUS_NETWORK:-odysseus_default}
